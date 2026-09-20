@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>计量链复核台 · Metrology Chain</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>计量链复核台</h1>
+  <div class="hint">所有判定均在服务端完成 · 幂等头 <code>X-Request-Id</code> · 冻结结果永久可复现</div>
+</header>
+<nav id="tabs">
+  <button data-tab="obs" class="active">原始观测</button>
+  <button data-tab="certs">校准证书</button>
+  <button data-tab="scn">方案与图</button>
+  <button data-tab="cmp">并排对比</button>
+  <button data-tab="audit">审计包</button>
+  <button data-tab="events">事件日志</button>
+</nav>
+
+<main>
+<!-- ===== Observations ===== -->
+<section id="tab-obs" class="tab active">
+  <div class="grid2">
+    <div>
+      <h2>录入原始观测</h2>
+      <form id="obs-form" class="card">
+        <label>ID（可留空自动生成）<input name="id" placeholder="obs_x1"></label>
+        <div class="row">
+          <label>观测值<input name="value" type="number" step="any" required></label>
+          <label>单位<input name="unit" placeholder="g / mg / degC / m.s^-2" required></label>
+        </div>
+        <div class="row">
+          <label>标准不确定度 u<input name="std_uncertainty" type="number" step="any" min="0" required></label>
+          <label>分布
+            <select name="distribution">
+              <option value="normal">normal 正态</option>
+              <option value="t">t 分布</option>
+              <option value="rectangular">rectangular 均匀</option>
+              <option value="triangular">triangular 三角</option>
+              <option value="u-shaped">u-shaped U形</option>
+            </select>
+          </label>
+          <label>自由度 ν（t 用）<input name="nu" type="number" step="any" placeholder="∞"></label>
+        </div>
+        <button type="submit">保存观测</button>
+      </form>
+    </div>
+    <div>
+      <h2>已保存观测</h2>
+      <table id="obs-table"><thead><tr><th>ID</th><th>值</th><th>单位</th><th>u</th><th>分布</th><th>ν</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Certificates ===== -->
+<section id="tab-certs" class="tab">
+  <div class="grid2">
+    <div>
+      <h2>登记校准证书</h2>
+      <form id="cert-form" class="card">
+        <div class="row">
+          <label>slope 斜率<input name="slope" type="number" step="any" value="0"></label>
+          <label>intercept 截距<input name="intercept" type="number" step="any" value="0"></label>
+        </div>
+        <div class="row">
+          <label>u(slope)<input name="slope_u" type="number" step="any" min="0" value="0"></label>
+          <label>u(intercept)<input name="intercept_u" type="number" step="any" min="0" value="0"></label>
+          <label>ρ(slope,intercept)<input name="slope_intercept_r" type="number" step="any" value="0"></label>
+        </div>
+        <div class="row">
+          <label>ν<input name="nu" type="number" step="any" value="100"></label>
+          <label>生效 RFC3339<input name="valid_from" placeholder="2020-01-01T00:00:00Z" required></label>
+          <label>到期 RFC3339<input name="valid_until" placeholder="2030-12-31T23:59:59Z" required></label>
+        </div>
+        <button>保存证书</button>
+      </form>
+      <h3>替换证书</h3>
+      <form id="cert-replace" class="card compact">
+        <label>旧证书
+          <select name="old"></select>
+        </label>
+        <div class="row">
+          <label>slope<input name="slope" type="number" step="any" value="0"></label>
+          <label>intercept<input name="intercept" type="number" step="any" value="0"></label>
+        </div>
+        <div class="row">
+          <label>u(slope)<input name="slope_u" type="number" step="any" min="0" value="0"></label>
+          <label>u(intercept)<input name="intercept_u" type="number" step="any" min="0" value="0"></label>
+          <label>ρ<input name="slope_intercept_r" type="number" step="any" value="0"></label>
+        </div>
+        <div class="row">
+          <label>ν<input name="nu" type="number" step="any" value="100"></label>
+          <label>生效<input name="valid_from" required></label>
+          <label>到期<input name="valid_until" required></label>
+        </div>
+        <button>替换并列出受影响结果</button>
+      </form>
+      <div id="affected-box" class="card hidden">
+        <h3>受影响结果</h3>
+        <div id="affected-list"></div>
+        <div class="row">
+          <button id="recompute-selected">逐个重算所选</button>
+          <button id="recompute-batch" class="primary">作为原子批次重算</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h2>证书列表</h2>
+      <table id="cert-table"><thead><tr><th>ID</th><th>rev</th><th>有效期</th><th>状态</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Scenarios ===== -->
+<section id="tab-scn" class="tab">
+  <div class="layout">
+    <aside class="panel">
+      <h2>方案</h2>
+      <div id="scn-list"></div>
+      <h3>新建方案</h3>
+      <form id="scn-new" class="card compact">
+        <label>名称<input name="name" required></label>
+        <label>覆盖概率 p<input name="coverage_p" type="number" step="any" value="0.95"></label>
+        <button>创建空方案</button>
+      </form>
+    </aside>
+    <div class="panel grow">
+      <div id="scn-head"></div>
+      <div id="graph-wrap"><svg id="graph"></svg></div>
+      <div id="scn-editor" class="hidden">
+        <div class="grid3">
+          <div>
+            <h3>节点</h3>
+            <form id="node-form" class="card compact">
+              <label>节点 ID<input name="id" required></label>
+              <label>类型
+                <select name="kind">
+                  <option value="convert">convert 换算</option>
+                  <option value="weighted">weighted 加权</option>
+                  <option value="diff">diff 差值</option>
+                  <option value="calibration">calibration 校准</option>
+                </select>
+              </label>
+              <label>输出单位<input name="unit" placeholder="mg" required></label>
+              <label>权重（加权，逗号分隔）<input name="weights" placeholder="1,2,1"></label>
+              <label>参考观测 x0（校准）<input name="reference_leaf" placeholder="obs_x0"></label>
+              <label>证书（校准）<select name="certificate_id"></select></label>
+              <button>加节点</button>
+            </form>
+            <ul id="node-list"></ul>
+          </div>
+          <div>
+            <h3>边</h3>
+            <form id="edge-form" class="card compact">
+              <label>from<input name="from" required></label>
+              <label>to（必须是节点）<input name="to" required></label>
+              <label>role
+                <select name="role">
+                  <option value="">（无）</option>
+                  <option value="a">a（差值）</option>
+                  <option value="b">b（差值）</option>
+                  <option value="reading">reading（校准）</option>
+                </select>
+              </label>
+              <button>加边</button>
+            </form>
+            <ul id="edge-list"></ul>
+          </div>
+          <div>
+            <h3>相关性</h3>
+            <form id="group-form" class="card compact">
+              <label>组 ID<input name="id" required></label>
+              <label>组内相关系数<input name="correlation" type="number" step="any" min="-1" max="1" value="0.8"></label>
+              <label>成员（逗号分隔观测 ID）<textarea name="members" rows="2"></textarea></label>
+              <button>加相关组</button>
+            </form>
+            <ul id="group-list"></ul>
+            <form id="pair-form" class="card compact">
+              <label>观测 A<input name="a"></label>
+              <label>观测 B<input name="b"></label>
+              <label>ρ<input name="correlation" type="number" step="any" min="-1" max="1"></label>
+              <button>加两两相关</button>
+            </form>
+          </div>
+        </div>
+        <div class="row">
+          <button id="btn-save-scn">保存方案</button>
+          <button id="btn-compute" class="primary">计算</button>
+          <label class="inline"><input type="checkbox" id="asof-toggle"> 以指定时间计算</label>
+          <input id="asof" placeholder="2031-01-01T00:00:00Z" class="hidden">
+          <button id="btn-copy">复制为新方案</button>
+          <button id="btn-freeze">冻结方案</button>
+        </div>
+      </div>
+      <div id="result-panel"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Compare ===== -->
+<section id="tab-cmp" class="tab">
+  <div class="card">
+    <h2>并排比较两个结果</h2>
+    <div class="row">
+      <label>A <select id="cmp-a"></select></label>
+      <label>B <select id="cmp-b"></select></label>
+      <button id="cmp-run">比较</button>
+    </div>
+  </div>
+  <div id="cmp-result"></div>
+</section>
+
+<!-- ===== Audit ===== -->
+<section id="tab-audit" class="tab">
+  <div class="grid2">
+    <div class="card">
+      <h2>导出审计包</h2>
+      <label>结果 ID<input id="audit-result-id" placeholder="res_000001"></label>
+      <button id="audit-export">下载 .tar 审计包</button>
+    </div>
+    <div class="card">
+      <h2>重新导入校验</h2>
+      <input type="file" id="audit-file" accept=".tar">
+      <label class="inline"><input type="checkbox" id="audit-store"> 校验通过后入库（冻结为可复现副本）</label>
+      <button id="audit-import">导入并校验</button>
+      <pre id="audit-report"></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Events ===== -->
+<section id="tab-events" class="tab">
+  <div class="card">
+    <h2>操作事件（append-only WAL 投影）</h2>
+    <button id="events-refresh">刷新</button>
+    <table id="events-table"><thead><tr><th>seq</th><th>事件</th><th>对象</th><th>request_id</th><th>时间</th></tr></thead><tbody></tbody></table>
+  </div>
+</section>
+</main>
+
+<div id="toast"></div>
+<script src="/app.js"></script>
+</body>
+</html>
